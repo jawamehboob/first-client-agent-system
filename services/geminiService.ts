@@ -1,21 +1,48 @@
 import { GoogleGenAI, Type, Schema } from "@google/genai";
 import { TechStackResponse, OpportunityResponse } from "../types";
 
-const apiKey = process.env.API_KEY || '';
+// Safe API Key retrieval to prevent crashes in environments where process is undefined
+const getApiKey = (): string | undefined => {
+  try {
+    if (typeof process !== 'undefined' && process.env && process.env.API_KEY) {
+      return process.env.API_KEY;
+    }
+  } catch (error) {
+    console.warn("process.env access failed", error);
+  }
+  return undefined;
+};
 
-// Initialize client
-const ai = new GoogleGenAI({ apiKey });
+let aiClient: GoogleGenAI | null = null;
 
-// Helper to check API key
+// Lazy initialization of the client
+const getClient = (): GoogleGenAI | null => {
+  if (aiClient) return aiClient;
+  
+  const key = getApiKey();
+  if (!key) return null;
+  
+  try {
+    aiClient = new GoogleGenAI({ apiKey: key });
+    return aiClient;
+  } catch (error) {
+    console.error("Error initializing GoogleGenAI client", error);
+    return null;
+  }
+};
+
 export const checkApiKey = () => {
-  if (!apiKey) {
+  if (!getClient()) {
     throw new Error("API Key is missing. Please configure process.env.API_KEY.");
   }
 };
 
 export const generateText = async (prompt: string, systemInstruction?: string): Promise<string> => {
-  checkApiKey();
   try {
+    checkApiKey();
+    const ai = getClient();
+    if (!ai) throw new Error("AI Client not initialized");
+
     const response = await ai.models.generateContent({
       model: 'gemini-2.5-flash',
       contents: prompt,
@@ -31,8 +58,11 @@ export const generateText = async (prompt: string, systemInstruction?: string): 
 };
 
 export const generateWithSearch = async (prompt: string): Promise<string> => {
-  checkApiKey();
   try {
+    checkApiKey();
+    const ai = getClient();
+    if (!ai) throw new Error("AI Client not initialized");
+
     const response = await ai.models.generateContent({
       model: 'gemini-2.5-flash',
       contents: prompt,
@@ -43,7 +73,6 @@ export const generateWithSearch = async (prompt: string): Promise<string> => {
     
     let text = response.text || "";
     
-    // Extract grounding chunks for citations
     const chunks = response.candidates?.[0]?.groundingMetadata?.groundingChunks;
     if (chunks && chunks.length > 0) {
       text += "\n\n**Verified Sources:**\n";
@@ -62,29 +91,32 @@ export const generateWithSearch = async (prompt: string): Promise<string> => {
 };
 
 export const generateOpportunities = async (industry: string): Promise<OpportunityResponse | null> => {
-  checkApiKey();
-  const prompt = `Identify 3 high-value 'Agentic Process Automation' use cases (n8n workflows) specifically for the ${industry} industry. Focus on problems that cause 'bleeding neck' pain. Return ONLY valid JSON.`;
-  
-  const schema: Schema = {
-    type: Type.OBJECT,
-    properties: {
-      ideas: {
-        type: Type.ARRAY,
-        items: {
-          type: Type.OBJECT,
-          properties: {
-            title: { type: Type.STRING },
-            description: { type: Type.STRING },
-            roi: { type: Type.STRING },
-          },
-          required: ["title", "description", "roi"]
-        }
-      }
-    },
-    required: ["ideas"]
-  };
-
   try {
+    checkApiKey();
+    const ai = getClient();
+    if (!ai) throw new Error("AI Client not initialized");
+
+    const prompt = `Identify 3 high-value 'Agentic Process Automation' use cases (n8n workflows) specifically for the ${industry} industry. Focus on problems that cause 'bleeding neck' pain. Return ONLY valid JSON.`;
+    
+    const schema: Schema = {
+      type: Type.OBJECT,
+      properties: {
+        ideas: {
+          type: Type.ARRAY,
+          items: {
+            type: Type.OBJECT,
+            properties: {
+              title: { type: Type.STRING },
+              description: { type: Type.STRING },
+              roi: { type: Type.STRING },
+            },
+            required: ["title", "description", "roi"]
+          }
+        }
+      },
+      required: ["ideas"]
+    };
+
     const response = await ai.models.generateContent({
       model: 'gemini-2.5-flash',
       contents: prompt,
@@ -105,31 +137,34 @@ export const generateOpportunities = async (industry: string): Promise<Opportuni
 };
 
 export const generateTechStack = async (industry: string): Promise<TechStackResponse | null> => {
-  checkApiKey();
-  const prompt = `Analyze the typical software tech stack for the ${industry} industry. 
-  Identify 3 key categories (e.g., CRM, Email, Operations) and the most popular tools they use.
-  Return valid JSON.`;
-
-  const schema: Schema = {
-    type: Type.OBJECT,
-    properties: {
-      stack: {
-        type: Type.ARRAY,
-        items: {
-          type: Type.OBJECT,
-          properties: {
-            category: { type: Type.STRING },
-            tools: { type: Type.STRING },
-            note: { type: Type.STRING },
-          },
-          required: ["category", "tools", "note"]
-        }
-      }
-    },
-    required: ["stack"]
-  };
-
   try {
+    checkApiKey();
+    const ai = getClient();
+    if (!ai) throw new Error("AI Client not initialized");
+
+    const prompt = `Analyze the typical software tech stack for the ${industry} industry. 
+    Identify 3 key categories (e.g., CRM, Email, Operations) and the most popular tools they use.
+    Return valid JSON.`;
+
+    const schema: Schema = {
+      type: Type.OBJECT,
+      properties: {
+        stack: {
+          type: Type.ARRAY,
+          items: {
+            type: Type.OBJECT,
+            properties: {
+              category: { type: Type.STRING },
+              tools: { type: Type.STRING },
+              note: { type: Type.STRING },
+            },
+            required: ["category", "tools", "note"]
+          }
+        }
+      },
+      required: ["stack"]
+    };
+
     const response = await ai.models.generateContent({
       model: 'gemini-2.5-flash',
       contents: prompt,
